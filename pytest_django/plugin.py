@@ -247,7 +247,9 @@ class CursorManager(object):
 
     def disable(self):
         if self._dbutil:
-            self._dbutil.CursorWrapper = self._blocking_wrapper
+            self._dbutil.CursorWrapper = self._orig_wrapper
+            # remove db marker requirement
+            #self._dbutil.CursorWrapper = self._blocking_wrapper
 
     def __enter__(self):
         self.enable()
