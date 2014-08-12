@@ -62,6 +62,18 @@ import py
 import sys
 
 
+def _load_settings_from_env(config, options):
+    # SE Specific settings
+    import dotenv
+    dotenv.read_dotenv()  # Load any local overrides
+    dotenv.read_dotenv('.env_defaults')  # Load the default development environment variables
+
+    # Configure DJANGO_SETTINGS_MODULE
+    ds = (options.ds or
+          config.getini(SETTINGS_MODULE_ENV) or
+          os.environ.get(SETTINGS_MODULE_ENV))
+
+
 def _exists(path, ignore=EnvironmentError):
     try:
         return path.check()
