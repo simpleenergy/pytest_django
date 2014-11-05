@@ -3,10 +3,9 @@ import sys
 import pytest
 
 from pytest_django.lazy_django import get_django_version
-
-from .db_helpers import (db_exists, drop_database, mark_database, mark_exists,
-                         skip_if_sqlite_in_memory)
-
+from pytest_django_test.db_helpers import (db_exists, drop_database,
+                                           mark_database, mark_exists,
+                                           skip_if_sqlite_in_memory)
 
 skip_on_python32 = pytest.mark.skipif(sys.version_info[:2] == (3, 2),
                                       reason='xdist is flaky with Python 3.2')
@@ -150,11 +149,21 @@ def test_xdist_with_reuse(django_testdir):
         @pytest.mark.django_db
         def test_b(settings):
             _check(settings)
+
+        @pytest.mark.django_db
+        def test_c(settings):
+            _check(settings)
+
+        @pytest.mark.django_db
+        def test_d(settings):
+            _check(settings)
     ''')
 
     result = django_testdir.runpytest('-vv', '-n2', '-s', '--reuse-db')
     result.stdout.fnmatch_lines(['*PASSED*test_a*'])
     result.stdout.fnmatch_lines(['*PASSED*test_b*'])
+    result.stdout.fnmatch_lines(['*PASSED*test_c*'])
+    result.stdout.fnmatch_lines(['*PASSED*test_d*'])
 
     assert db_exists('gw0')
     assert db_exists('gw1')
@@ -162,11 +171,15 @@ def test_xdist_with_reuse(django_testdir):
     result = django_testdir.runpytest('-vv', '-n2', '-s', '--reuse-db')
     result.stdout.fnmatch_lines(['*PASSED*test_a*'])
     result.stdout.fnmatch_lines(['*PASSED*test_b*'])
+    result.stdout.fnmatch_lines(['*PASSED*test_c*'])
+    result.stdout.fnmatch_lines(['*PASSED*test_d*'])
 
     result = django_testdir.runpytest('-vv', '-n2', '-s', '--reuse-db',
                                       '--create-db')
     result.stdout.fnmatch_lines(['*PASSED*test_a*'])
     result.stdout.fnmatch_lines(['*PASSED*test_b*'])
+    result.stdout.fnmatch_lines(['*PASSED*test_c*'])
+    result.stdout.fnmatch_lines(['*PASSED*test_d*'])
 
 
 class TestSqliteWithXdist:
@@ -216,13 +229,13 @@ def test_initial_data(django_testdir_initial):
 # NOTE: South tries to monkey-patch management._commands, which has been
 #       replaced by lru_cache and would cause an AttributeError.
 @pytest.mark.skipif(get_django_version() >= (1, 7),
-                    reason='South fails with Django 1.7.')
-@pytest.mark.skipif(sys.version_info[:2] == (3, 4),
-                    reason='South fails on Python 3.4.')
+                    reason='South does not support Django 1.7+')
+@pytest.mark.skipif(sys.version_info[0] == 3,
+                    reason='South is not properly supported on Python 3')
 class TestSouth:
     """Test interaction with initial_data and South."""
 
-    @pytest.mark.extra_settings("""
+    @pytest.mark.django_project(extra_settings="""
         INSTALLED_APPS += [ 'south', ]
         SOUTH_TESTS_MIGRATE = True
         SOUTH_MIGRATION_MODULES = {
@@ -244,7 +257,7 @@ class TestSouth:
         result = django_testdir_initial.runpytest('--tb=short', '-v')
         result.stdout.fnmatch_lines(['*test_inner_south*PASSED*'])
 
-    @pytest.mark.extra_settings("""
+    @pytest.mark.django_project(extra_settings="""
         INSTALLED_APPS += [ 'south', ]
         SOUTH_TESTS_MIGRATE = True
         SOUTH_MIGRATION_MODULES = {
@@ -272,7 +285,7 @@ class TestSouth:
         result = testdir.runpytest('--tb=short', '-v', '-s')
         result.stdout.fnmatch_lines(['*mark_south_migration_forwards*'])
 
-    @pytest.mark.extra_settings("""
+    @pytest.mark.django_project(extra_settings="""
         INSTALLED_APPS += [ 'south', ]
         SOUTH_TESTS_MIGRATE = False
         SOUTH_MIGRATION_MODULES = {

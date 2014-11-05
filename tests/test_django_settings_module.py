@@ -3,8 +3,9 @@
 If these tests fail you probably forgot to run "python setup.py develop".
 """
 
-import pytest
 import django
+import pytest
+
 
 BARE_SETTINGS = '''
 # At least one database must be configured
@@ -79,9 +80,7 @@ def test_ds_non_existent(testdir, monkeypatch):
     monkeypatch.setenv('DJANGO_SETTINGS_MODULE', 'DOES_NOT_EXIST')
     testdir.makepyfile('def test_ds(): pass')
     result = testdir.runpytest()
-    result.stderr.fnmatch_lines(
-        ["*ImportError: Could not import settings 'DOES_NOT_EXIST'"
-         " (Is it on sys.path?*): *"])
+    result.stderr.fnmatch_lines(["*ImportError:*DOES_NOT_EXIST*"])
 
 
 def test_ds_after_user_conftest(testdir, monkeypatch):
@@ -222,12 +221,12 @@ def test_debug_false(testdir, monkeypatch):
 
 @pytest.mark.skipif(not hasattr(django, 'setup'),
                     reason="This Django version does not support app loading")
-@pytest.mark.extra_settings("""
+@pytest.mark.django_project(extra_settings="""
     INSTALLED_APPS = [
         'tpkg.app.apps.TestApp',
     ]
-    """)
-def test_django_setup(django_testdir):
+""")
+def test_django_setup_sequence(django_testdir):
     django_testdir.create_app_file("""
         from django.apps import apps, AppConfig
 

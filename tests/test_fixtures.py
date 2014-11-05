@@ -11,11 +11,10 @@ from django.conf import settings as real_settings
 from django.test.client import Client, RequestFactory
 from django.test.testcases import connections_support_transactions
 
-from .app.models import Item
-from .test_database import noop_transactions
-from .compat import force_text, urlopen
-
 from pytest_django.lazy_django import get_django_version
+from pytest_django_test.app.models import Item
+from pytest_django_test.compat import force_text, HTTPError, urlopen
+from pytest_django_test.db_helpers import noop_transactions
 
 
 def test_client(client):
@@ -89,7 +88,6 @@ class TestLiveServer:
     pytestmark = [
         pytest.mark.skipif(get_django_version() < (1, 4),
                            reason="Django > 1.3 required"),
-        pytest.mark.urls('tests.urls_liveserver'),
     ]
 
     def test_url(self, live_server):
@@ -147,8 +145,68 @@ class TestLiveServer:
         response_data = urlopen(live_server + '/item_count/').read()
         assert force_text(response_data) == 'Item count: 1'
 
+    @pytest.mark.skipif(get_django_version() >= (1, 7),
+                        reason="Django < 1.7 required")
+    def test_serve_static(self, live_server, settings):
+        """
+        Test that the LiveServer serves static files by default.
+        """
+        response_data = urlopen(live_server + '/static/a_file.txt').read()
+        assert force_text(response_data) == 'bla\n'
 
-@pytest.mark.extra_settings("""
+    @pytest.mark.django_project(extra_settings="""
+        INSTALLED_APPS = [
+            'django.contrib.auth',
+            'django.contrib.contenttypes',
+            'django.contrib.sessions',
+            'django.contrib.sites',
+            'django.contrib.staticfiles',
+            'tpkg.app',
+        ]
+
+        STATIC_URL = '/static/'
+        """)
+    def test_serve_static_with_staticfiles_app(self, django_testdir, settings):
+        """
+        LiveServer always serves statics with ``django.contrib.staticfiles``
+        handler.
+        """
+        django_testdir.create_test_module("""
+            import pytest
+            try:
+                from django.utils.encoding import force_text
+            except ImportError:
+                from django.utils.encoding import force_unicode as force_text
+
+            try:
+                from urllib2 import urlopen, HTTPError
+            except ImportError:
+                from urllib.request import urlopen, HTTPError
+
+            class TestLiveServer:
+                def test_a(self, live_server, settings):
+                    assert ('django.contrib.staticfiles'
+                            in settings.INSTALLED_APPS)
+                    response_data = urlopen(
+                        live_server + '/static/a_file.txt').read()
+                    assert force_text(response_data) == 'bla\\n'
+            """)
+        result = django_testdir.runpytest('--tb=short', '-v')
+        result.stdout.fnmatch_lines(['*test_a*PASSED*'])
+
+    @pytest.mark.skipif(get_django_version() < (1, 7),
+                        reason="Django >= 1.7 required")
+    def test_serve_static_dj17_without_staticfiles_app(self, live_server,
+                                                       settings):
+        """
+        Because ``django.contrib.staticfiles`` is not installed
+        LiveServer can not serve statics with django >= 1.7 .
+        """
+        with pytest.raises(HTTPError):
+            urlopen(live_server + '/static/a_file.txt').read()
+
+
+@pytest.mark.django_project(extra_settings="""
     AUTH_USER_MODEL = 'app.MyCustomUser'
     INSTALLED_APPS = [
         'django.contrib.auth',
@@ -158,13 +216,6 @@ class TestLiveServer:
         'tpkg.app',
     ]
     ROOT_URLCONF = 'tpkg.app.urls'
-    MIDDLEWARE_CLASSES = (
-        'django.contrib.sessions.middleware.SessionMiddleware',
-        'django.middleware.common.CommonMiddleware',
-        'django.middleware.csrf.CsrfViewMiddleware',
-        'django.contrib.auth.middleware.AuthenticationMiddleware',
-        'django.contrib.messages.middleware.MessageMiddleware',
-    )
     """)
 @pytest.mark.skipif(get_django_version() < (1, 5),
                     reason="Django >= 1.5 required")
@@ -203,7 +254,7 @@ def test_custom_user_model(django_testdir):
                     Template('Access denied').render(Context()))
         """, 'views.py')
     django_testdir.makepyfile("""
-        from tests.compat import force_text
+        from pytest_django_test.compat import force_text
         from tpkg.app.models import MyCustomUser
 
         def test_custom_user_model(admin_client):

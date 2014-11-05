@@ -8,23 +8,33 @@ from textwrap import dedent
 # https://xkcd.com/1205/
 
 
-TestEnv = namedtuple('TestEnv', ['python_version', 'pytest_version',
-                                 'django_version', 'settings'])
+TestEnvBase = namedtuple('TestEnvBase', ['python_version', 'pytest_version',
+                                         'django_version', 'settings'])
+
+class TestEnv(TestEnvBase):
+    def is_py2(self):
+        return self.python_version.startswith('python2') or self.python_version == 'pypy'
+
+    def is_py3(self):
+        return self.python_version.startswith('python3') or self.python_version == 'pypy3'
+
+    def is_pypy(self):
+        return self.python_version.startswith('pypy')
 
 # Python to run tox.
-RUN_PYTHON = '3.3'
+RUN_PYTHON = '3.4'
 PYTHON_VERSIONS = ['python2.6', 'python2.7', 'python3.2', 'python3.3',
                    'python3.4', 'pypy', 'pypy3']
-PYTEST_VERSIONS = ['2.5.2', '2.6.0']
+PYTEST_VERSIONS = ['2.5.2', '2.6.3']
 DJANGO_VERSIONS = ['1.3', '1.4', '1.5', '1.6', '1.7', 'master']
 SETTINGS = ['sqlite', 'sqlite_file', 'mysql_myisam', 'mysql_innodb',
             'postgres']
 DJANGO_REQUIREMENTS = {
     '1.3': 'Django==1.3.7',
-    '1.4': 'Django==1.4.13',
-    '1.5': 'Django==1.5.8',
-    '1.6': 'Django==1.6.5',
-    '1.7': 'https://www.djangoproject.com/download/1.7c2/tarball/',
+    '1.4': 'Django==1.4.15',
+    '1.5': 'Django==1.5.10',
+    '1.6': 'Django==1.6.7',
+    '1.7': 'Django==1.7',
     'master': 'https://github.com/django/django/archive/master.zip',
 }
 
@@ -36,23 +46,19 @@ TOX_TESTENV_TEMPLATE = dedent("""
     deps =
     %(deps)s
     setenv =
-         DJANGO_SETTINGS_MODULE = tests.settings_%(settings)s
          PYTHONPATH = {toxinidir}
          UID = %(uid)s
     """)
 
 
 def is_valid_env(env):
+
     # Stable database adapters for PyPy+Postgres/MySQL are hard to come by..
-    if env.python_version == 'pypy' and env.settings in ('postgres',
-                                                         'mysql_myisam',
-                                                         'mysql_innodb'):
+    if env.is_pypy() and env.settings in ('postgres', 'mysql_myisam', 'mysql_innodb'):
         return False
 
-    if env.python_version == 'pypy' and env.settings in 'mysql':
-        return False
-
-    if env.python_version in ('python3.2', 'python3.3', 'python3.4'):
+    if env.is_py3():
+        # Django <1.5 does not support Python 3
         if env.django_version in ('1.3', '1.4'):
             return False
 
@@ -61,8 +67,7 @@ def is_valid_env(env):
             return False
 
     # Django 1.7 dropped Python 2.6 support
-    if env.python_version == 'python2.6' \
-            and env.django_version in ('1.7', 'master'):
+    if env.python_version == 'python2.6' and env.django_version in ('1.7', 'master'):
         return False
 
     return True
@@ -70,10 +75,12 @@ def is_valid_env(env):
 
 def requirements(env):
     yield 'pytest==%s' % (env.pytest_version)
-    yield 'pytest-xdist==1.10'
+    yield 'pytest-xdist==1.11'
     yield DJANGO_REQUIREMENTS[env.django_version]
     yield 'django-configurations==0.8'
-    yield 'south==1.0'
+
+    if env.is_py2():
+        yield 'south==1.0'
 
     if env.settings == 'postgres':
         # Django 1.3 does not work with recent psycopg2 versions
@@ -100,7 +107,7 @@ def commands(uid, env):
         yield 'sh -c "dropdb %(name)s;' \
             ' createdb %(name)s || exit 0"' % {'name': db_name}
 
-    yield 'py.test {posargs}'
+    yield 'py.test --ds=pytest_django_test.settings_%s --strict -r fEsxXw {posargs}' % env.settings
 
 
 def testenv_name(env):
@@ -135,7 +142,7 @@ def generate_all_envs():
             yield env
 
 
-def generate_unique_envs(envs):
+def generate_default_envs(envs):
     """
     Returns a list of testenvs that include all different Python versions, all
     Django versions and all database backends.
@@ -157,12 +164,18 @@ def generate_unique_envs(envs):
     return result
 
 
-def make_tox_ini(envs):
+def make_tox_ini(envs, default_envs):
+    default_env_names = ([testenv_name(env) for env in default_envs] +
+                         ['checkqa-%s' % python_version for python_version in PYTHON_VERSIONS])
+
     contents = [dedent('''
+        [tox]
+        envlist = %(active_envs)s
+
         [testenv]
         whitelist_externals =
             sh
-        ''')]
+            ''' % {'active_envs': ','.join(default_env_names)}).lstrip()]
 
     # Add checkqa-testenvs for different PYTHON_VERSIONS.
     # flake8 is configured in setup.cfg.
@@ -215,20 +228,15 @@ def make_travis_yml(envs):
 
 def main():
     all_envs = sorted(generate_all_envs())
-    unique_envs = sorted(generate_unique_envs(all_envs))
+    default_envs = sorted(generate_default_envs(all_envs))
 
     with open('tox.ini', 'w+') as tox_ini_file:
-        tox_ini_file.write(make_tox_ini(all_envs))
+        tox_ini_file.write(make_tox_ini(all_envs, default_envs))
 
     with open('.travis.yml', 'w+') as travis_yml_file:
-        travis_yml_file.write(make_travis_yml(unique_envs))
+        travis_yml_file.write(make_travis_yml(default_envs))
 
-    print('Run unique envs locally with ')
-    print()
-    print('tox -e ' + ','.join(testenv_name(e) for e in unique_envs))
-    print()
-    print('detox -e ' + ','.join(testenv_name(e) for e in unique_envs))
-
+    print ('tox.ini and .travis.yml has been generated!')
 
 if __name__ == '__main__':
     main()

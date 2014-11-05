@@ -2,13 +2,32 @@ Changelog
 =========
 
 NEXT
-----
+-----
+
+Features
+^^^^^^^^
+
+* pytest's verbosity is being used for Django's code to setup/teardown the test
+  database (#172).
+
+2.7.0
+-----
 
 Features
 ^^^^^^^^
 
 * New fixtures: ``admin_user``, ``django_user_model`` and
   ``django_username_field`` (#109).
+
+* Automatic discovery of Django projects to make it easier for new users. This
+  change is slightly backward incompatible, if you encounter problems with it,
+  the old behaviour can be restored by adding this to ``pytest.ini``,
+  ``setup.cfg`` or ``tox.ini``::
+
+    [pytest]
+    django_find_project = false
+
+  Please see the :ref:`managing_python_path` section for more information.
 
 Bugfixes
 ^^^^^^^^
@@ -26,6 +45,12 @@ Bugfixes
   Ionel Cristian Mărieș, Daniel Hahler, Tymur Maryokhin, Kirill SIbirev, Paul
   Collins, Aymeric Augustin, Jannis Leidel, Baptiste Mispelon and Anatoly
   Bubenkoff for report, discussion and feedback.
+
+* `The `live_server`` fixture can now serve static files also for Django>=1.7
+  if the ``django.contrib.staticfiles`` app is installed. (#140).
+
+* ``DJANGO_LIVE_TEST_SERVER_ADDRESS`` environment variable is read instead
+  of ``DJANGO_TEST_LIVE_SERVER_ADDRESS``. (#140)
 
 2.6.2
 -----
