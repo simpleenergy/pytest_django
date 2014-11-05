@@ -168,6 +168,10 @@ def pytest_load_initial_conftests(early_config, parser, args):
     else:
         _django_project_scan_outcome = PROJECT_SCAN_DISABLED
 
+    import dotenv
+    dotenv.read_dotenv()  # Load any local overrides
+    dotenv.read_dotenv('.env_defaults')  # Load the default development environment variables
+
     # Configure DJANGO_SETTINGS_MODULE
     ds = (options.ds or
           early_config.getini(SETTINGS_MODULE_ENV) or
